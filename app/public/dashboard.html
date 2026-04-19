@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard — BuyServ Pinterest Poster</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">BuyServ</div>
+    <div class="top-actions">
+      <span id="who" class="muted"></span>
+      <button id="logout" class="btn small ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main class="dash">
+    <section class="card">
+      <h2>1. Pick a board</h2>
+      <p class="muted">Products will post to the selected board by default.</p>
+      <div class="row">
+        <select id="board" class="input"></select>
+        <button id="refresh-boards" class="btn ghost" type="button">Refresh</button>
+      </div>
+      <details class="mt">
+        <summary>Create a new board</summary>
+        <div class="row mt">
+          <input id="new-board-name" class="input" placeholder="Board name" />
+          <input id="new-board-desc" class="input" placeholder="Description (optional)" />
+          <button id="create-board" class="btn" type="button">Create</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>2. Add a product</h2>
+      <form id="product-form" class="form">
+        <label>
+          Title
+          <input name="title" class="input" required maxlength="100" placeholder="Cozy Linen Throw Blanket" />
+        </label>
+        <label>
+          Image URL
+          <input name="image_url" class="input" required placeholder="https://..." type="url" />
+        </label>
+        <label>
+          Affiliate link
+          <input name="affiliate_url" class="input" required placeholder="https://your-affiliate-link..." type="url" />
+        </label>
+        <label>
+          Description
+          <textarea name="description" class="input" rows="3" maxlength="500" placeholder="Short pin description with relevant keywords."></textarea>
+        </label>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Save as draft</button>
+          <button id="save-and-post" class="btn" type="button">Save & post now</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Bulk upload (CSV)</h2>
+      <p class="muted">
+        Columns accepted: <code>title</code>, <code>image_url</code>, <code>affiliate_url</code>,
+        <code>description</code> (optional), <code>board</code> or <code>board_id</code> (optional).
+      </p>
+      <form id="csv-form" class="row">
+        <input id="csv-file" class="input" type="file" accept=".csv" required />
+        <button class="btn" type="submit">Import</button>
+        <a href="/sample.csv" download class="muted small">Download sample</a>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="row-between">
+        <h2>Your products</h2>
+        <div class="row">
+          <button id="post-all" class="btn primary" type="button">Post all drafts</button>
+        </div>
+      </div>
+      <div id="products"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

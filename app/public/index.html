@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BuyServ — Pinterest Affiliate Poster</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="landing">
+  <main class="center">
+    <div class="logo">BuyServ</div>
+    <h1>Post affiliate products to Pinterest in one click.</h1>
+    <p class="sub">Connect your business Pinterest account, paste in a product, pick a board, post. Or upload a CSV and post in bulk.</p>
+
+    <div id="status" class="status"></div>
+
+    <a id="connect" class="btn primary large" href="/auth/login" hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 0C5.4 0 0 5.4 0 12c0 5 3.1 9.3 7.5 11-.1-.9-.2-2.4 0-3.4.2-.9 1.4-5.9 1.4-5.9s-.4-.7-.4-1.8c0-1.7 1-3 2.2-3 1 0 1.5.8 1.5 1.7 0 1-.7 2.6-1 4-.3 1.2.6 2.1 1.7 2.1 2.1 0 3.7-2.2 3.7-5.3 0-2.8-2-4.7-4.9-4.7-3.3 0-5.3 2.5-5.3 5.1 0 1 .4 2.1.9 2.7.1.1.1.2.1.3l-.3 1.3c-.1.2-.2.3-.4.2-1.5-.7-2.4-2.9-2.4-4.6 0-3.8 2.7-7.2 7.9-7.2 4.1 0 7.3 2.9 7.3 6.9 0 4.1-2.6 7.5-6.2 7.5-1.2 0-2.4-.6-2.8-1.4l-.7 2.9c-.3 1-1 2.4-1.5 3.2 1.1.3 2.3.5 3.5.5 6.6 0 12-5.4 12-12S18.6 0 12 0z"/></svg>
+      Connect Pinterest
+    </a>
+
+    <div id="setup" class="setup-card" hidden>
+      <h3>One-time setup needed</h3>
+      <p>Before connecting, add your Pinterest app credentials:</p>
+      <ol>
+        <li>Create a Pinterest app at <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener">developers.pinterest.com/apps</a>.</li>
+        <li>Set the redirect URI to <code id="redirect-hint">http://localhost:3000/auth/callback</code>.</li>
+        <li>Copy <code>.env.example</code> to <code>.env</code> and fill in <code>PINTEREST_CLIENT_ID</code> + <code>PINTEREST_CLIENT_SECRET</code>.</li>
+        <li>Restart the app.</li>
+      </ol>
+      <p id="missing-vars" class="muted"></p>
+    </div>
+
+    <ul class="features">
+      <li><b>One-click pins</b> — title, image, affiliate link, board. Done.</li>
+      <li><b>Bulk CSV upload</b> — import hundreds of products, post them all with one button.</li>
+      <li><b>Saved drafts</b> — review before posting, retry failures, never lose a product.</li>
+    </ul>
+  </main>
+
+  <script>
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      if (cfg.signedIn) {
+        location.href = '/dashboard.html';
+        return;
+      }
+      if (cfg.ready) {
+        document.getElementById('connect').hidden = false;
+      } else {
+        document.getElementById('setup').hidden = false;
+        document.getElementById('missing-vars').textContent =
+          'Missing: ' + cfg.missing.join(', ');
+      }
+    });
+  </script>
+</body>
+</html>
