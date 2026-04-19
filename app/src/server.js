@@ -17,6 +17,7 @@ const auth = require('./auth');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -25,7 +26,7 @@ app.use((req, res, next) => {
   res.set('Referrer-Policy', 'no-referrer');
   next();
 });
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '75mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -204,42 +205,81 @@ app.post('/api/boards', async (req, res) => {
 // ---------- Products ----------
 app.get('/api/products', (req, res) => {
   const accountId = req.query.account_id;
-  let rows;
-  if (accountId) {
-    rows = db.prepare('SELECT * FROM products WHERE account_id = ? ORDER BY id DESC LIMIT 500').all(accountId);
-  } else {
-    rows = db.prepare('SELECT * FROM products ORDER BY id DESC LIMIT 500').all();
-  }
-  // strip base64 data from list response
-  res.json(rows.map(r => ({ ...r, image_data: r.image_data ? '[inline]' : null })));
+  const cols = `id, account_id, title, description, image_url, affiliate_url,
+    board_id, board_name, status, pinterest_pin_id, scheduled_for, error,
+    created_at, posted_at, media_type,
+    (image_data IS NOT NULL) AS has_image_data,
+    (video_data IS NOT NULL) AS has_video_data,
+    (cover_image_data IS NOT NULL) AS has_cover_image,
+    impressions, saves, pin_clicks, outbound_clicks, last_analytics_at`;
+  const rows = accountId
+    ? db.prepare(`SELECT ${cols} FROM products WHERE account_id = ? ORDER BY id DESC LIMIT 500`).all(accountId)
+    : db.prepare(`SELECT ${cols} FROM products ORDER BY id DESC LIMIT 500`).all();
+  res.json(rows);
 });
 
-function insertProduct({ accountId, title, description, image_url, image_data, image_mime, affiliate_url, board_id, board_name, scheduled_for }) {
+function insertProduct({ accountId, title, description, image_url, image_data, image_mime, affiliate_url, board_id, board_name, scheduled_for, media_type, video_data, video_mime, cover_image_data, cover_image_mime }) {
   const info = db.prepare(`
-    INSERT INTO products (account_id, title, description, image_url, image_data, image_mime, affiliate_url, board_id, board_name, scheduled_for, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (
+      account_id, title, description,
+      image_url, image_data, image_mime,
+      affiliate_url, board_id, board_name,
+      scheduled_for, status,
+      media_type, video_data, video_mime, cover_image_data, cover_image_mime
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    accountId, title, description || '', image_url || null, image_data || null, image_mime || null,
+    accountId, title, description || '',
+    image_url || null, image_data || null, image_mime || null,
     affiliate_url, board_id || null, board_name || null,
-    scheduled_for || null,
-    scheduled_for ? 'scheduled' : 'draft'
+    scheduled_for || null, scheduled_for ? 'scheduled' : 'draft',
+    media_type || 'image', video_data || null, video_mime || null,
+    cover_image_data || null, cover_image_mime || null
   );
   return db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
 }
 
-app.post('/api/products', upload.single('image'), (req, res) => {
+const productUpload = videoUpload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'video', maxCount: 1 },
+  { name: 'cover_image', maxCount: 1 }
+]);
+
+app.post('/api/products', productUpload, (req, res) => {
   const account = auth.pickAccount(req);
   if (!account) return res.status(400).json({ error: 'no_account' });
 
   const body = req.body || {};
+  const files = req.files || {};
+
   let image_data = null, image_mime = null;
-  if (req.file) {
-    image_data = req.file.buffer.toString('base64');
-    image_mime = req.file.mimetype || 'image/jpeg';
+  if (files.image?.[0]) {
+    image_data = files.image[0].buffer.toString('base64');
+    image_mime = files.image[0].mimetype || 'image/jpeg';
   } else if (body.image_base64) {
     image_data = body.image_base64;
     image_mime = body.image_mime || 'image/png';
   }
+
+  let video_data = null, video_mime = null;
+  if (files.video?.[0]) {
+    video_data = files.video[0].buffer.toString('base64');
+    video_mime = files.video[0].mimetype || 'video/mp4';
+  }
+
+  let cover_image_data = null, cover_image_mime = null;
+  if (files.cover_image?.[0]) {
+    cover_image_data = files.cover_image[0].buffer.toString('base64');
+    cover_image_mime = files.cover_image[0].mimetype || 'image/jpeg';
+  } else if (body.cover_image_base64) {
+    cover_image_data = body.cover_image_base64;
+    cover_image_mime = body.cover_image_mime || 'image/png';
+  }
+
+  const isVideo = !!video_data;
+  if (isVideo && !cover_image_data && !body.image_url) {
+    return res.status(400).json({ error: 'Video pins require a cover image (upload or URL)' });
+  }
+
   const payload = {
     accountId: account.id,
     title: body.title,
@@ -250,11 +290,19 @@ app.post('/api/products', upload.single('image'), (req, res) => {
     affiliate_url: body.affiliate_url,
     board_id: body.board_id,
     board_name: body.board_name,
-    scheduled_for: body.scheduled_for ? Number(body.scheduled_for) : null
+    scheduled_for: body.scheduled_for ? Number(body.scheduled_for) : null,
+    media_type: isVideo ? 'video' : 'image',
+    video_data,
+    video_mime,
+    cover_image_data,
+    cover_image_mime
   };
   const errs = compliance.validateProduct(payload);
   if (errs.length) return res.status(400).json({ error: errs.join('; ') });
-  res.json(insertProduct(payload));
+  const row = insertProduct(payload);
+  // Strip large blobs from response
+  const { video_data: _vd, cover_image_data: _cid, image_data: _id, ...safe } = row;
+  res.json(safe);
 });
 
 app.delete('/api/products/:id', (req, res) => {
@@ -366,6 +414,54 @@ app.post('/api/scrape/bulk', async (req, res) => {
     catch (err) { results.push({ ok: false, url, error: err.message }); }
   }
   res.json({ results });
+});
+
+// ---------- Analytics ----------
+app.post('/api/products/:id/analytics/refresh', async (req, res) => {
+  const p = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  if (!p.pinterest_pin_id) return res.status(400).json({ error: 'not_posted' });
+  const account = auth.getAccountById(p.account_id);
+  if (!account) return res.status(400).json({ error: 'account_gone' });
+  try {
+    const acct = await auth.ensureFreshToken(account);
+    const result = await scheduler.refreshAnalyticsForPin(acct, p);
+    if (!result) return res.status(500).json({ error: 'analytics fetch failed — see server logs' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/analytics/refresh-all', async (req, res) => {
+  try {
+    await scheduler.analyticsTick();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/accounts/:id/analytics', async (req, res) => {
+  const account = auth.getAccountById(req.params.id);
+  if (!account) return res.status(404).json({ error: 'not_found' });
+  try {
+    const acct = await auth.ensureFreshToken(account);
+    const days = Math.max(1, Math.min(180, Number(req.query.days) || 30));
+    const data = await pinterest.getUserAnalytics(acct.access_token, days);
+    const bucket = data?.ALL || data?.all || data;
+    const sums = bucket?.summary_metrics || bucket?.lifetime_metrics || {};
+    res.json({
+      days,
+      impressions: Number(sums.IMPRESSION || 0),
+      saves: Number(sums.SAVE || 0),
+      pin_clicks: Number(sums.PIN_CLICK || 0),
+      outbound_clicks: Number(sums.OUTBOUND_CLICK || 0),
+      raw: bucket
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------- AI image generation ----------

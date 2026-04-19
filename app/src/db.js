@@ -78,6 +78,16 @@ addColumnIfMissing('accounts', 'last_posted_at', 'INTEGER');
 addColumnIfMissing('products', 'image_data', 'TEXT');
 addColumnIfMissing('products', 'image_mime', 'TEXT');
 addColumnIfMissing('products', 'scheduled_for', 'INTEGER');
+addColumnIfMissing('products', 'media_type', "TEXT DEFAULT 'image'");
+addColumnIfMissing('products', 'video_data', 'TEXT');
+addColumnIfMissing('products', 'video_mime', 'TEXT');
+addColumnIfMissing('products', 'cover_image_data', 'TEXT');
+addColumnIfMissing('products', 'cover_image_mime', 'TEXT');
+addColumnIfMissing('products', 'impressions', 'INTEGER');
+addColumnIfMissing('products', 'saves', 'INTEGER');
+addColumnIfMissing('products', 'pin_clicks', 'INTEGER');
+addColumnIfMissing('products', 'outbound_clicks', 'INTEGER');
+addColumnIfMissing('products', 'last_analytics_at', 'INTEGER');
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);

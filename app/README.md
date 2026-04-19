@@ -10,6 +10,8 @@ A self-hosted app that automates posting affiliate products to your business Pin
 - **Paste a product URL → auto-filled draft** (Open Graph scraper: title, image, description).
 - **Bulk URL import** and **CSV bulk import** (hundreds of products at once).
 - **Upload images from disk** or generate them with **AI** (OpenAI `gpt-image-1`).
+- **Video pins**: upload up to 50MB MP4/MOV, auto-register with Pinterest media API, poll for ready, attach cover image.
+- **Analytics**: per-pin impressions / saves / pin clicks / outbound clicks, plus 30-day account totals. Auto-refreshed every 12 hours.
 - **Schedule posts** for later, or **queue** to post ASAP.
 - **Rate-limited background worker**: respects `daily_pin_limit` and `min_seconds_between_pins` per account so Pinterest doesn't flag you as spam.
 - **Auto-disclosure**: appends `#affiliate #ad` to descriptions (FTC + Pinterest requirement) unless you turn it off.

@@ -170,6 +170,44 @@ textarea.input { resize: vertical; }
 .pill.scheduled { background: #e3ecfa; color: #1c4d8a; }
 .pill.posted { background: #e3f3e6; color: #1c6b2d; }
 .pill.failed { background: #fbe3e3; color: #a0181c; }
+.pill.video { background: #ece3fa; color: #4a2ea0; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.stat {
+  background: #faf7f4;
+  border: 1px solid #eee4da;
+  border-radius: 10px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.stat b {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.stat span {
+  color: #6b6b6b;
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+.stats-mini {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 4px;
+  color: #6b6b6b;
+}
+.stats-mini span { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .actions { display: flex; gap: 0.4rem; }
 
 .toast {

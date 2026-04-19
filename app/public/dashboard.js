@@ -47,7 +47,28 @@ async function init() {
   }
   await loadAccounts();
   if (!currentAccountId) return;
-  await Promise.all([loadBoards(), loadProducts(), renderAccountSettings()]);
+  await Promise.all([loadBoards(), loadProducts(), renderAccountSettings(), loadAnalytics()]);
+}
+
+async function loadAnalytics() {
+  if (!currentAccountId) return;
+  try {
+    const d = await api(`/api/accounts/${currentAccountId}/analytics?days=30`);
+    $('#stat-impressions').textContent = fmt(d.impressions);
+    $('#stat-saves').textContent = fmt(d.saves);
+    $('#stat-pin-clicks').textContent = fmt(d.pin_clicks);
+    $('#stat-outbound').textContent = fmt(d.outbound_clicks);
+    $('#analytics-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    $('#analytics-updated').textContent = err.message;
+  }
+}
+
+function fmt(n) {
+  const x = Number(n || 0);
+  if (x >= 1e6) return (x / 1e6).toFixed(1) + 'M';
+  if (x >= 1e3) return (x / 1e3).toFixed(1) + 'K';
+  return String(x);
 }
 
 async function loadAccounts() {
@@ -98,7 +119,20 @@ $('#cfg-save').addEventListener('click', async () => {
 $('#account-switcher').addEventListener('change', async e => {
   currentAccountId = Number(e.target.value);
   renderAccountSettings();
-  await Promise.all([loadBoards(), loadProducts()]);
+  await Promise.all([loadBoards(), loadProducts(), loadAnalytics()]);
+});
+
+$('#refresh-analytics').addEventListener('click', async () => {
+  $('#refresh-analytics').disabled = true;
+  $('#refresh-analytics').textContent = 'Refreshing…';
+  try {
+    await api('/api/analytics/refresh-all', { method: 'POST' });
+    toast('Analytics refreshed');
+    await loadAnalytics();
+    await loadProducts();
+  } catch (err) { toast(err.message, true); }
+  $('#refresh-analytics').disabled = false;
+  $('#refresh-analytics').textContent = 'Refresh all';
 });
 
 async function loadBoards() {
@@ -123,27 +157,48 @@ async function loadProducts() {
   wrap.innerHTML = items.map(renderProduct).join('');
   wrap.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', () => postOne(b.dataset.post)));
   wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => delOne(b.dataset.del)));
+  wrap.querySelectorAll('[data-stats]').forEach(b => b.addEventListener('click', () => refreshStats(b.dataset.stats)));
+}
+
+async function refreshStats(id) {
+  try {
+    await api(`/api/products/${id}/analytics/refresh`, { method: 'POST' });
+    toast('Stats refreshed');
+    await loadProducts();
+  } catch (err) { toast(err.message, true); }
 }
 
 function renderProduct(p) {
   const pill = `<span class="pill ${p.status}">${p.status}</span>`;
+  const mediaBadge = p.media_type === 'video' ? '<span class="pill video">video</span>' : '';
   const sched = p.scheduled_for
     ? `<small>scheduled ${new Date(p.scheduled_for * 1000).toLocaleString()}</small>` : '';
   const img = p.image_url ? escapeHtml(p.image_url) : '';
+  const err = p.error ? `<small style="color:#a0181c">${escapeHtml(p.error)}</small>` : '';
+  const inline = p.has_image_data ? '<small class="muted">uploaded image</small>' : '';
+
+  const stats = p.status === 'posted' && p.last_analytics_at
+    ? `<small class="stats-mini">
+         <span>👁 ${fmt(p.impressions)}</span>
+         <span>💾 ${fmt(p.saves)}</span>
+         <span>📌 ${fmt(p.pin_clicks)}</span>
+         <span>🔗 ${fmt(p.outbound_clicks)}</span>
+       </small>` : '';
+
   const actions = p.status === 'posted'
-    ? `<button class="btn small ghost" data-del="${p.id}">Delete</button>`
+    ? `<button class="btn small ghost" data-stats="${p.id}">Refresh stats</button>
+       <button class="btn small ghost" data-del="${p.id}">Delete</button>`
     : `<button class="btn small primary" data-post="${p.id}">Post now</button>
        <button class="btn small ghost" data-del="${p.id}">Delete</button>`;
-  const err = p.error ? `<small style="color:#a0181c">${escapeHtml(p.error)}</small>` : '';
-  const inline = p.image_data === '[inline]' ? '<small class="muted">uploaded image</small>' : '';
   return `
     <div class="product">
       ${img ? `<img src="${img}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />`
             : `<div class="img-ph"></div>`}
       <div class="meta">
-        <b>${escapeHtml(p.title)} ${pill}</b>
+        <b>${escapeHtml(p.title)} ${pill} ${mediaBadge}</b>
         <small>${escapeHtml(p.affiliate_url)}</small>
         ${sched} ${inline} ${err}
+        ${stats}
       </div>
       <div class="actions">${actions}</div>
     </div>`;
@@ -251,6 +306,13 @@ async function saveProduct(action) {
     body.append('image_base64', pendingImage.data);
     body.append('image_mime', pendingImage.mime);
   }
+  const vf = $('#video-file').files[0];
+  if (vf) {
+    if (vf.size > 50 * 1024 * 1024) { toast('Video exceeds 50MB limit', true); return; }
+    body.append('video', vf);
+  }
+  const cf = $('#cover-image-file').files[0];
+  if (cf) body.append('cover_image', cf);
   let scheduledTs = null;
   if (action === 'schedule') {
     const v = fd.get('scheduled_for');
@@ -278,6 +340,9 @@ async function saveProduct(action) {
     }
     form.reset();
     $('#clear-image').click();
+    $('#video-file').value = '';
+    $('#cover-image-file').value = '';
+    $('#video-status').textContent = '';
     await loadProducts();
     await loadAccounts();
     renderAccountSettings();
@@ -350,6 +415,17 @@ $('#queue-all').addEventListener('click', async () => {
 $('#logout').addEventListener('click', async () => {
   await api('/api/logout', { method: 'POST' });
   location.href = '/';
+});
+
+$('#video-file')?.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) { $('#video-status').textContent = ''; return; }
+  const mb = (f.size / 1024 / 1024).toFixed(1);
+  if (f.size > 50 * 1024 * 1024) {
+    $('#video-status').innerHTML = `<span style="color:#a0181c">Selected ${mb}MB — exceeds 50MB limit</span>`;
+  } else {
+    $('#video-status').textContent = `Selected: ${f.name} (${mb}MB). Remember to set a cover image or Image URL.`;
+  }
 });
 
 init();
