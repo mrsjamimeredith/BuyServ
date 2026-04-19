@@ -19,7 +19,7 @@ async function init() {
     $('#missing-vars').textContent = 'Missing: ' + cfg.missingEnv.join(', ');
     return;
   }
-  if (!cfg.adminSet) {
+  if (!cfg.setupDone) {
     $('#setup-admin').hidden = false;
   } else {
     $('#login').hidden = false;
@@ -33,7 +33,7 @@ $('#setup-form')?.addEventListener('submit', async e => {
   const confirm = f.get('confirm');
   if (password !== confirm) { alert('Passwords do not match'); return; }
   try {
-    await api('/api/setup', { method: 'POST', body: { password } });
+    await api('/api/setup', { method: 'POST', body: { username: f.get('username'), password } });
     location.href = '/dashboard.html';
   } catch (err) { alert(err.message); }
 });
@@ -42,7 +42,7 @@ $('#login-form')?.addEventListener('submit', async e => {
   e.preventDefault();
   const f = new FormData(e.target);
   try {
-    await api('/api/login', { method: 'POST', body: { password: f.get('password') } });
+    await api('/api/login', { method: 'POST', body: { username: f.get('username'), password: f.get('password') } });
     location.href = '/dashboard.html';
   } catch (err) { $('#login-err').textContent = err.message; }
 });

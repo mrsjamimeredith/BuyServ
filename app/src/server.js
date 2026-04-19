@@ -10,6 +10,7 @@ const db = require('./db');
 const pinterest = require('./pinterest');
 const scraper = require('./scraper');
 const aiImage = require('./aiImage');
+const amazon = require('./amazon');
 const compliance = require('./compliance');
 const scheduler = require('./scheduler');
 const { encrypt } = require('./crypto');
@@ -20,6 +21,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 app.disable('x-powered-by');
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('X-Frame-Options', 'DENY');
@@ -47,25 +49,27 @@ function checkEnv() {
 // ---------- Public endpoints (no auth) ----------
 app.get('/api/config', (req, res) => {
   const missingEnv = checkEnv();
-  const adminSet = !!auth.getAdmin();
+  const setupDone = auth.userCount() > 0;
+  const me = auth.currentUser(req);
   res.json({
-    ready: missingEnv.length === 0 && adminSet,
+    ready: missingEnv.length === 0 && setupDone,
     missingEnv,
-    adminSet,
-    signedIn: auth.isAuthed(req),
-    aiImageConfigured: aiImage.isConfigured()
+    setupDone,
+    signedIn: !!me,
+    me: me ? { id: me.id, username: me.username, role: me.role } : null,
+    aiImageConfigured: aiImage.isConfigured(),
+    amazonConfigured: amazon.isConfigured()
   });
 });
 
 app.post('/api/setup', (req, res) => {
-  if (auth.getAdmin()) return res.status(400).json({ error: 'already_setup' });
-  const { password } = req.body || {};
-  if (!password || password.length < 10) {
-    return res.status(400).json({ error: 'Password must be at least 10 characters.' });
-  }
-  auth.setAdminPassword(password);
-  auth.createSession(res);
-  res.json({ ok: true });
+  if (auth.userCount() > 0) return res.status(400).json({ error: 'already_setup' });
+  try {
+    const { username, password } = req.body || {};
+    const user = auth.createUser(username || 'admin', password, 'admin');
+    auth.createSession(res, user.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 app.post('/api/login', (req, res) => {
@@ -73,14 +77,14 @@ app.post('/api/login', (req, res) => {
   if (auth.isLoginLocked(ip)) {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   }
-  const admin = auth.getAdmin();
-  if (!admin) return res.status(400).json({ error: 'not_setup' });
-  const { password } = req.body || {};
-  const ok = password && auth.verifyPassword(password, admin.password_hash);
+  if (auth.userCount() === 0) return res.status(400).json({ error: 'not_setup' });
+  const { username, password } = req.body || {};
+  const user = username ? auth.getUserByUsername(username) : null;
+  const ok = user && password && auth.verifyPassword(password, user.password_hash);
   auth.recordLoginAttempt(ip, !!ok);
-  if (!ok) return res.status(401).json({ error: 'Invalid password' });
-  auth.createSession(res);
-  res.json({ ok: true });
+  if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
+  auth.createSession(res, user.id);
+  res.json({ ok: true, role: user.role });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -98,9 +102,47 @@ app.use('/api', auth.csrfCheck);
 
 app.get('/api/csrf', (req, res) => res.json({ token: auth.csrfToken(req) }));
 
+// ---------- User management (admin only) ----------
+app.get('/api/users', auth.requireRole('admin'), (req, res) => res.json(auth.listUsers()));
+
+app.post('/api/users', auth.requireRole('admin'), (req, res) => {
+  try {
+    const { username, password, role } = req.body || {};
+    const u = auth.createUser(username, password, role || 'editor');
+    res.json({ id: u.id, username: u.username, role: u.role });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.patch('/api/users/:id', auth.requireRole('admin'), (req, res) => {
+  try {
+    const { password, role } = req.body || {};
+    const u = auth.updateUser(req.params.id, { password, role });
+    res.json({ id: u.id, username: u.username, role: u.role });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/users/:id', auth.requireRole('admin'), (req, res) => {
+  try {
+    if (Number(req.params.id) === req.user.id) return res.status(400).json({ error: 'cannot_delete_self' });
+    auth.deleteUser(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/me/password', (req, res) => {
+  const { current, next: nxt } = req.body || {};
+  if (!auth.verifyPassword(current || '', req.user.password_hash)) {
+    return res.status(401).json({ error: 'current password incorrect' });
+  }
+  try { auth.updateUser(req.user.id, { password: nxt }); res.json({ ok: true }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 // ---------- Pinterest OAuth ----------
 app.get('/auth/connect', (req, res) => {
-  if (!auth.isAuthed(req)) return res.redirect('/');
+  const me = auth.currentUser(req);
+  if (!me) return res.redirect('/');
+  if (me.role !== 'admin') return res.status(403).send('Only admins can connect Pinterest accounts.');
   const missing = checkEnv();
   if (missing.length) return res.status(500).send(`Missing env vars: ${missing.join(', ')}`);
   const state = crypto.randomBytes(16).toString('hex');
@@ -110,7 +152,9 @@ app.get('/auth/connect', (req, res) => {
 
 app.get('/auth/callback', async (req, res) => {
   try {
-    if (!auth.isAuthed(req)) return res.redirect('/');
+    const me = auth.currentUser(req);
+    if (!me) return res.redirect('/');
+    if (me.role !== 'admin') return res.status(403).send('Only admins can connect Pinterest accounts.');
     const { code, state } = req.query;
     if (!code || !state || !oauthStates.has(state)) return res.status(400).send('Invalid OAuth state.');
     oauthStates.delete(state);
@@ -157,7 +201,7 @@ app.get('/api/accounts', (req, res) => {
   res.json(rows);
 });
 
-app.patch('/api/accounts/:id', (req, res) => {
+app.patch('/api/accounts/:id', auth.requireRole('admin'), (req, res) => {
   const { daily_pin_limit, min_seconds_between_pins, auto_disclose } = req.body || {};
   const fields = [];
   const vals = [];
@@ -170,7 +214,7 @@ app.patch('/api/accounts/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/accounts/:id', (req, res) => {
+app.delete('/api/accounts/:id', auth.requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -188,7 +232,7 @@ app.get('/api/boards', async (req, res) => {
   }
 });
 
-app.post('/api/boards', async (req, res) => {
+app.post('/api/boards', auth.requireRole('admin', 'editor'), async (req, res) => {
   const account = auth.pickAccount(req);
   if (!account) return res.status(400).json({ error: 'no_account' });
   try {
@@ -244,7 +288,7 @@ const productUpload = videoUpload.fields([
   { name: 'cover_image', maxCount: 1 }
 ]);
 
-app.post('/api/products', productUpload, (req, res) => {
+app.post('/api/products', auth.requireRole('admin', 'editor'), productUpload, (req, res) => {
   const account = auth.pickAccount(req);
   if (!account) return res.status(400).json({ error: 'no_account' });
 
@@ -305,12 +349,12 @@ app.post('/api/products', productUpload, (req, res) => {
   res.json(safe);
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', auth.requireRole('admin', 'editor'), (req, res) => {
   db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-app.post('/api/products/:id/post', async (req, res) => {
+app.post('/api/products/:id/post', auth.requireRole('admin', 'editor'), async (req, res) => {
   const p = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not_found' });
   const account = auth.getAccountById(p.account_id);
@@ -326,7 +370,7 @@ app.post('/api/products/:id/post', async (req, res) => {
   }
 });
 
-app.post('/api/products/:id/schedule', (req, res) => {
+app.post('/api/products/:id/schedule', auth.requireRole('admin', 'editor'), (req, res) => {
   const { scheduled_for } = req.body || {};
   const ts = Number(scheduled_for);
   if (!ts || ts < Math.floor(Date.now() / 1000) - 60) {
@@ -337,7 +381,7 @@ app.post('/api/products/:id/schedule', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/products/queue-all', (req, res) => {
+app.post('/api/products/queue-all', auth.requireRole('admin', 'editor'), (req, res) => {
   const accountId = req.body?.account_id;
   const where = accountId ? 'account_id = ? AND ' : '';
   const vals = accountId ? [accountId] : [];
@@ -349,7 +393,7 @@ app.post('/api/products/queue-all', (req, res) => {
 });
 
 // ---------- CSV import ----------
-app.post('/api/products/import-csv', upload.single('file'), (req, res) => {
+app.post('/api/products/import-csv', auth.requireRole('admin', 'editor'), upload.single('file'), (req, res) => {
   const account = auth.pickAccount(req);
   if (!account) return res.status(400).json({ error: 'no_account' });
   if (!req.file) return res.status(400).json({ error: 'file required' });
@@ -462,6 +506,76 @@ app.get('/api/accounts/:id/analytics', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---------- Amazon PA-API ----------
+app.get('/api/amazon/config', auth.requireRole('admin'), (req, res) => {
+  const c = amazon.getCreds();
+  res.json({
+    configured: !!c,
+    associate_tag: c?.associate_tag || null,
+    marketplace: c?.marketplace || null,
+    // never send the secret back
+    access_key_masked: c?.access_key ? c.access_key.slice(0, 4) + '…' + c.access_key.slice(-4) : null,
+    marketplaces: Object.keys(amazon.MARKETPLACES)
+  });
+});
+
+app.post('/api/amazon/config', auth.requireRole('admin'), (req, res) => {
+  try {
+    amazon.saveCreds(req.body || {});
+    res.json({ ok: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/amazon/config', auth.requireRole('admin'), (req, res) => {
+  amazon.clearCreds();
+  res.json({ ok: true });
+});
+
+app.post('/api/amazon/test', auth.requireRole('admin'), async (req, res) => {
+  try {
+    const r = await amazon.test();
+    res.json(r);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.get('/api/amazon/search', auth.requireRole('admin', 'editor'), async (req, res) => {
+  try {
+    const { q, index, page } = req.query;
+    if (!q) return res.status(400).json({ error: 'q required' });
+    const items = await amazon.searchItems(q, {
+      itemCount: 10,
+      itemPage: Number(page) || 1,
+      searchIndex: index || 'All'
+    });
+    res.json({ items });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/amazon/import', auth.requireRole('admin', 'editor'), (req, res) => {
+  const account = auth.pickAccount(req);
+  if (!account) return res.status(400).json({ error: 'no_account' });
+  const { items, board_id, board_name } = req.body || {};
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'items required' });
+  let added = 0;
+  const tx = db.transaction(() => {
+    for (const it of items) {
+      if (!it.title || !it.image_url || !it.url) continue;
+      insertProduct({
+        accountId: account.id,
+        title: String(it.title).slice(0, 100),
+        description: (it.description || '').slice(0, 500),
+        image_url: it.image_url,
+        affiliate_url: it.url,
+        board_id: board_id || null,
+        board_name: board_name || null
+      });
+      added += 1;
+    }
+  });
+  tx();
+  res.json({ added });
 });
 
 // ---------- AI image generation ----------

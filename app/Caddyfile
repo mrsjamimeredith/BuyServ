@@ -1,0 +1,25 @@
+# Caddy handles TLS termination + HTTPS automatically.
+# It requests + renews Let's Encrypt certs for whatever DOMAIN resolves to this server.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Security headers (Caddy already sets several sane defaults).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+	}
+
+	# Reverse-proxy to the Node app.
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-Proto https
+	}
+
+	# Allow large file uploads (video pins up to 50MB).
+	request_body {
+		max_size 80MB
+	}
+}

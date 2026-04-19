@@ -16,10 +16,20 @@ db.exec(`
     created_at INTEGER DEFAULT (strftime('%s','now'))
   );
 
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin','editor','viewer')),
+    created_at INTEGER DEFAULT (strftime('%s','now'))
+  );
+
   CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
+    user_id INTEGER,
     created_at INTEGER DEFAULT (strftime('%s','now')),
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS accounts (
@@ -88,6 +98,18 @@ addColumnIfMissing('products', 'saves', 'INTEGER');
 addColumnIfMissing('products', 'pin_clicks', 'INTEGER');
 addColumnIfMissing('products', 'outbound_clicks', 'INTEGER');
 addColumnIfMissing('products', 'last_analytics_at', 'INTEGER');
+addColumnIfMissing('sessions', 'user_id', 'INTEGER');
+
+// one-time migration: if legacy admin table has a password and users is empty,
+// seed a default admin user from it.
+try {
+  const legacy = db.prepare('SELECT password_hash FROM admin WHERE id = 1').get();
+  const hasUsers = db.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0;
+  if (legacy && !hasUsers) {
+    db.prepare(`INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')`)
+      .run('admin', legacy.password_hash);
+  }
+} catch { /* tables may not exist yet on first run */ }
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);

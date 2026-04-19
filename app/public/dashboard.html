@@ -11,7 +11,9 @@
     <div class="logo">BuyServ</div>
     <div class="top-actions">
       <select id="account-switcher" class="input small" title="Current Pinterest account"></select>
-      <a href="/auth/connect" class="btn small">+ Connect account</a>
+      <a id="connect-link" href="/auth/connect" class="btn small">+ Connect account</a>
+      <a id="users-link" href="/users.html" class="btn small ghost" hidden>Team</a>
+      <span id="me-badge" class="muted small"></span>
       <button id="logout" class="btn small ghost">Sign out</button>
     </div>
   </header>
@@ -129,6 +131,39 @@
           <button id="save-and-schedule" class="btn" type="button">Save & schedule</button>
         </div>
       </form>
+    </section>
+
+    <section class="card" id="amazon-card" hidden>
+      <h2>Amazon product search</h2>
+      <p id="amazon-status" class="muted small"></p>
+      <div class="row">
+        <input id="amazon-q" class="input" placeholder="Keywords (e.g. aesthetic coffee mug)" />
+        <select id="amazon-index" class="input" style="flex:0 0 160px">
+          <option>All</option><option>HomeAndKitchen</option><option>Beauty</option>
+          <option>Fashion</option><option>Electronics</option><option>Toys</option>
+          <option>Books</option><option>PetSupplies</option><option>Grocery</option>
+        </select>
+        <button id="amazon-search" class="btn primary" type="button">Search</button>
+        <button id="amazon-settings-btn" class="btn small ghost" type="button" data-admin>Settings</button>
+      </div>
+      <div id="amazon-settings" class="mt" hidden>
+        <div class="grid3">
+          <label>Access key<input id="amz-access" class="input" /></label>
+          <label>Secret key<input id="amz-secret" class="input" type="password" /></label>
+          <label>Associate tag<input id="amz-tag" class="input" /></label>
+          <label>Marketplace<select id="amz-mp" class="input"></select></label>
+        </div>
+        <div class="row mt">
+          <button id="amz-save" class="btn primary" type="button">Save credentials</button>
+          <button id="amz-test" class="btn" type="button">Test</button>
+          <button id="amz-clear" class="btn ghost" type="button">Disconnect</button>
+        </div>
+      </div>
+      <div id="amazon-results" class="amazon-grid mt"></div>
+      <div class="row mt">
+        <button id="amazon-import" class="btn primary" type="button" hidden>Import selected as drafts</button>
+        <span id="amazon-selected-count" class="muted small"></span>
+      </div>
     </section>
 
     <section class="card">

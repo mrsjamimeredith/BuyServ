@@ -37,15 +37,27 @@ function escapeHtml(s) {
 
 function accountQS() { return currentAccountId ? `?account_id=${currentAccountId}` : ''; }
 
+let ME = null;
+
 async function init() {
   const cfg = await api('/api/config');
   if (!cfg.signedIn) { location.href = '/'; return; }
+  ME = cfg.me;
+  $('#me-badge').textContent = `${ME.username} (${ME.role})`;
+  if (ME.role === 'admin') $('#users-link').hidden = false;
+  if (ME.role !== 'admin') $('#connect-link').style.display = 'none';
+  if (ME.role === 'viewer') {
+    // Hide write UI for viewers
+    document.querySelectorAll('[data-write], #product-form, #csv-form, #queue-all')
+      .forEach(el => { const c = el.closest('.card'); if (c) c.style.display = 'none'; });
+  }
   CSRF = (await api('/api/csrf')).token;
   if (!cfg.aiImageConfigured) {
     $('#ai-note').textContent = 'Set OPENAI_API_KEY in .env to enable AI images.';
     $('#ai-generate').disabled = true;
   }
   await loadAccounts();
+  await initAmazon(cfg);
   if (!currentAccountId) return;
   await Promise.all([loadBoards(), loadProducts(), renderAccountSettings(), loadAnalytics()]);
 }
@@ -415,6 +427,142 @@ $('#queue-all').addEventListener('click', async () => {
 $('#logout').addEventListener('click', async () => {
   await api('/api/logout', { method: 'POST' });
   location.href = '/';
+});
+
+// ---------- Amazon ----------
+let amazonSelected = new Map();
+
+async function initAmazon(cfg) {
+  if (ME.role === 'viewer') return;
+  $('#amazon-card').hidden = false;
+  // Admin-only elements
+  if (ME.role !== 'admin') {
+    document.querySelectorAll('[data-admin]').forEach(el => el.style.display = 'none');
+  }
+  if (!cfg.amazonConfigured) {
+    $('#amazon-status').innerHTML = ME.role === 'admin'
+      ? 'Not configured — click <b>Settings</b> to add your Amazon Associates PA-API keys.'
+      : 'Amazon PA-API not configured — ask an admin to add keys.';
+    if (ME.role === 'admin') $('#amazon-settings').hidden = false;
+  } else {
+    $('#amazon-status').textContent = 'Amazon connected. Search for products to import.';
+  }
+  if (ME.role === 'admin') await loadAmazonConfig();
+}
+
+async function loadAmazonConfig() {
+  try {
+    const c = await api('/api/amazon/config');
+    const sel = $('#amz-mp');
+    sel.innerHTML = c.marketplaces.map(m => `<option value="${m}">${m}</option>`).join('');
+    if (c.configured) {
+      sel.value = c.marketplace;
+      $('#amz-tag').value = c.associate_tag;
+      $('#amz-access').placeholder = c.access_key_masked || '';
+    }
+  } catch (err) { /* viewer/editor won't reach here */ }
+}
+
+$('#amazon-settings-btn')?.addEventListener('click', () => {
+  $('#amazon-settings').hidden = !$('#amazon-settings').hidden;
+});
+
+$('#amz-save')?.addEventListener('click', async () => {
+  try {
+    await api('/api/amazon/config', { method: 'POST', body: {
+      access_key: $('#amz-access').value.trim(),
+      secret_key: $('#amz-secret').value.trim(),
+      associate_tag: $('#amz-tag').value.trim(),
+      marketplace: $('#amz-mp').value
+    }});
+    toast('Saved');
+    $('#amz-secret').value = '';
+    $('#amazon-status').textContent = 'Amazon connected. Search for products to import.';
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#amz-test')?.addEventListener('click', async () => {
+  $('#amz-test').disabled = true;
+  $('#amz-test').textContent = 'Testing…';
+  try {
+    const r = await api('/api/amazon/test', { method: 'POST' });
+    toast(r.ok ? `Works! Found: ${r.sample?.title?.slice(0, 40)}…` : 'Test failed: ' + r.error, !r.ok);
+  } catch (err) { toast(err.message, true); }
+  $('#amz-test').disabled = false;
+  $('#amz-test').textContent = 'Test';
+});
+
+$('#amz-clear')?.addEventListener('click', async () => {
+  if (!confirm('Disconnect Amazon? You will need to re-enter keys.')) return;
+  await api('/api/amazon/config', { method: 'DELETE' });
+  toast('Disconnected');
+  $('#amazon-status').textContent = 'Not configured.';
+});
+
+$('#amazon-search').addEventListener('click', async () => {
+  const q = $('#amazon-q').value.trim();
+  if (!q) return toast('Enter keywords', true);
+  $('#amazon-search').disabled = true;
+  $('#amazon-search').textContent = 'Searching…';
+  try {
+    const qs = new URLSearchParams({ q, index: $('#amazon-index').value }).toString();
+    const r = await api('/api/amazon/search?' + qs);
+    amazonSelected = new Map();
+    renderAmazonResults(r.items);
+    updateAmazonCount();
+  } catch (err) { toast(err.message, true); }
+  $('#amazon-search').disabled = false;
+  $('#amazon-search').textContent = 'Search';
+});
+
+function renderAmazonResults(items) {
+  const wrap = $('#amazon-results');
+  if (!items.length) { wrap.innerHTML = '<p class="muted">No results.</p>'; return; }
+  wrap.innerHTML = items.map((it, i) => `
+    <label class="amazon-card">
+      <input type="checkbox" data-idx="${i}" />
+      <img src="${escapeHtml(it.image_url)}" alt="" onerror="this.style.visibility='hidden'" />
+      <div class="meta">
+        <b>${escapeHtml(it.title || '')}</b>
+        <small>${escapeHtml(it.price || '')}</small>
+      </div>
+    </label>
+  `).join('');
+  wrap.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) amazonSelected.set(i, items[i]);
+      else amazonSelected.delete(i);
+      updateAmazonCount();
+    });
+  });
+  $('#amazon-import').hidden = items.length === 0;
+}
+
+function updateAmazonCount() {
+  const n = amazonSelected.size;
+  $('#amazon-selected-count').textContent = n ? `${n} selected` : '';
+}
+
+$('#amazon-import').addEventListener('click', async () => {
+  if (!amazonSelected.size) return toast('Select products to import', true);
+  const board = selectedBoard();
+  if (!board.id) return toast('Pick a board first', true);
+  try {
+    const r = await api('/api/amazon/import', {
+      method: 'POST',
+      body: {
+        items: [...amazonSelected.values()],
+        board_id: board.id,
+        board_name: board.name
+      }
+    });
+    toast(`Imported ${r.added} as drafts`);
+    amazonSelected = new Map();
+    $('#amazon-results').innerHTML = '';
+    $('#amazon-import').hidden = true;
+    updateAmazonCount();
+    await loadProducts();
+  } catch (err) { toast(err.message, true); }
 });
 
 $('#video-file')?.addEventListener('change', e => {

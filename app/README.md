@@ -1,76 +1,36 @@
 # BuyServ — Pinterest Affiliate Poster
 
-A self-hosted app that automates posting affiliate products to your business Pinterest accounts. Multi-account, scheduled, rate-limited, and compliant with Pinterest + FTC rules by default.
+A self-hosted app that automates posting affiliate products to your business Pinterest accounts. Multi-account, multi-user, scheduled, rate-limited, compliant with Pinterest + FTC rules by default.
 
 ---
 
 ## What it does
 
-- **Multi-account**: connect as many Pinterest business accounts as you want, switch between them.
-- **Paste a product URL → auto-filled draft** (Open Graph scraper: title, image, description).
-- **Bulk URL import** and **CSV bulk import** (hundreds of products at once).
-- **Upload images from disk** or generate them with **AI** (OpenAI `gpt-image-1`).
-- **Video pins**: upload up to 50MB MP4/MOV, auto-register with Pinterest media API, poll for ready, attach cover image.
-- **Analytics**: per-pin impressions / saves / pin clicks / outbound clicks, plus 30-day account totals. Auto-refreshed every 12 hours.
+### Core
+- **Multi-account Pinterest** — connect as many business accounts as needed, switch in UI.
+- **Paste a product URL → auto-filled draft** (Open Graph scraper).
+- **Bulk import** — CSV or paste up to 50 URLs at once.
+- **Amazon Associates integration** — search Amazon products via PA-API, pick with checkboxes, import as pre-tagged affiliate drafts.
+- **Image sources** — URL, file upload (base64 to Pinterest, no hosting needed), or AI generation (OpenAI `gpt-image-1`).
+- **Video pins** — upload up to 50MB MP4/MOV; app auto-registers with Pinterest media API, polls, attaches cover.
 - **Schedule posts** for later, or **queue** to post ASAP.
-- **Rate-limited background worker**: respects `daily_pin_limit` and `min_seconds_between_pins` per account so Pinterest doesn't flag you as spam.
-- **Auto-disclosure**: appends `#affiliate #ad` to descriptions (FTC + Pinterest requirement) unless you turn it off.
-- **Encrypted token storage**: Pinterest OAuth tokens encrypted at rest with AES-256-GCM.
-- **Admin password gate + CSRF + login lockout**.
+- **Rate-limited background worker** — respects per-account `daily_pin_limit` and `min_seconds_between_pins`.
+- **Analytics** — per-pin impressions/saves/pin-clicks/outbound-clicks + 30-day account totals; auto-refreshed every 12h.
+- **Auto-disclosure** — appends `#affiliate #ad` to descriptions (FTC + Pinterest requirement).
+
+### Team & security
+- **Multi-user with roles**: `admin` / `editor` / `viewer`.
+  - **admin**: everything — user management, connect Pinterest accounts, configure Amazon, all write ops.
+  - **editor**: post / schedule / edit / delete products; no account or user management.
+  - **viewer**: read-only.
+- **AES-256-GCM encryption** of OAuth tokens + Amazon credentials at rest.
+- **CSRF** tokens on all state-changing `/api/*` routes.
+- **Login rate-limit**: 5 bad attempts per IP → 15-min lockout.
+- **scrypt password hashing**, httpOnly/SameSite/Secure cookies, security headers.
 
 ---
 
-## Security model (read this)
-
-This app stores tokens that can post to your Pinterest. Treat it like production software.
-
-| Concern | What we do |
-|---|---|
-| Someone visits my instance URL | Admin password gate (first-run setup). 5 failed attempts = 15-min IP lockout. |
-| DB file leaks | Pinterest tokens + refresh tokens are AES-256-GCM encrypted with a key derived from `SESSION_SECRET`. |
-| Cross-site request forgery | All state-changing `/api/*` endpoints require an `x-csrf-token` header bound to your session. |
-| Cookie theft | `httpOnly`, `SameSite=Lax`, `Secure` in production. |
-| Brute-force | scrypt password hashing (N=16384). |
-
-**Deployment checklist:**
-- Put it behind HTTPS (Caddy/Cloudflare/nginx). Set `NODE_ENV=production`.
-- Use a long random `SESSION_SECRET` (32+ bytes). Back it up somewhere safe — lose it and encrypted tokens are unrecoverable.
-- Don't expose it to the open internet without auth. The admin password is your only wall.
-- Regularly rotate Pinterest app credentials if compromised.
-
----
-
-## Things I deliberately did NOT build, and why
-
-You asked for a few things I'm not doing — please read this so we're aligned.
-
-### ❌ Connecting a bank account
-
-**Not building this.** Your Pinterest affiliate workflow has zero reason to touch your bank:
-- Affiliate networks (Amazon Associates, ShareASale, Impact, CJ, Rakuten, etc.) pay you directly via ACH/PayPal. That doesn't need a third app in between.
-- Storing bank credentials creates massive regulatory liability (PCI, GLBA). If someone compromises this app, they can post spammy pins (annoying, recoverable) — we should NOT also hand them your bank.
-- If you ever need payment flows (e.g., paid Pinterest ads), use Plaid/Stripe OAuth as a separate, purpose-built integration. Don't bolt it onto a pinning app.
-
-**Result: more secure by design.** Attackers can't drain what isn't connected.
-
-### ❌ Auto-creating affiliate accounts with vendors
-
-**Not building this.** Virtually every affiliate program — Amazon Associates, ShareASale, Impact, CJ, each brand's direct program — explicitly requires human applications, reviews your promotional methods, and bans bot-created accounts. Automating signup would:
-1. Violate their ToS.
-2. Get your accounts terminated and commissions clawed back.
-3. Potentially be legal fraud.
-
-**What I built instead:** tools that make you wildly more productive *after* you're approved — paste any product URL, generate pins with AI, schedule across accounts, bulk CSV.
-
-Recommended flow: apply manually to 3–5 programs → use this app to crank output once approved.
-
-### ❌ Midjourney integration
-
-**Midjourney has no official API.** The unofficial APIs scrape Discord and violate Midjourney's ToS — using one here would risk your MJ account. I built a pluggable image-generation interface with **OpenAI `gpt-image-1`** as the provider (it's fast, reliable, and has an actual API). If Midjourney ships an official API, swap it in as a new provider in `src/aiImage.js`.
-
----
-
-## Setup (5–10 min)
+## Setup (local, 5–10 min)
 
 ### 1. Pinterest app
 
@@ -83,19 +43,20 @@ Recommended flow: apply manually to 3–5 programs → use this app to crank out
 ```bash
 cd app
 cp .env.example .env
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # copy this into SESSION_SECRET
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # -> SESSION_SECRET
 ```
 
 Fill `.env`:
 
-```
+```env
 PINTEREST_CLIENT_ID=...
 PINTEREST_CLIENT_SECRET=...
 REDIRECT_URI=http://localhost:3000/auth/callback
 SESSION_SECRET=<paste the random hex>
-OPENAI_API_KEY=sk-...   # optional; enables AI images
+OPENAI_API_KEY=sk-...          # optional; enables AI images
 PORT=3000
 NODE_ENV=development
+DOMAIN=localhost               # used by docker-compose only
 ```
 
 ### 3. Run
@@ -107,35 +68,105 @@ npm start
 
 Open <http://localhost:3000>:
 
-1. **Create admin password** (min 10 chars).
+1. **Create admin account** (username + 10+ char password).
 2. **Connect your first Pinterest account** (top right).
-3. **Tune settings** for that account (daily limit, throttle, auto-disclose).
-4. **Add products** — paste URL, upload image, or type by hand. Save as draft, queue now, or schedule.
+3. **(Optional) Add Amazon keys** (admin-only "Settings" in the Amazon card).
+4. **Add team members** from the Team page (admin-only).
+5. **Add products** — paste URL, upload image, or search Amazon.
 
-Repeat step 2 for additional accounts.
+---
+
+## Hosting on your own domain (HTTPS, production)
+
+This ships with a Docker Compose setup that runs the app behind [Caddy](https://caddyserver.com/), which handles TLS termination + Let's Encrypt certs automatically.
+
+### Prereqs
+- A server (any VPS — DigitalOcean $5 droplet is fine) with Docker + Docker Compose.
+- A domain name. Point an A record at the server's public IP.
+
+### Steps
+
+```bash
+# On your server
+git clone https://github.com/mrsjamimeredith/BuyServ.git
+cd BuyServ/app
+
+# Configure env — set DOMAIN + REDIRECT_URI to your public HTTPS URL.
+cp .env.example .env
+# Edit .env:
+#   DOMAIN=buyserv.yourdomain.com
+#   REDIRECT_URI=https://buyserv.yourdomain.com/auth/callback
+#   NODE_ENV=production
+#   SESSION_SECRET=<long random>
+# (And PINTEREST_CLIENT_ID / SECRET from your Pinterest app.)
+
+# Update your Pinterest app's redirect URI in the developer dashboard
+# to exactly match REDIRECT_URI above.
+
+docker compose up -d --build
+```
+
+Caddy requests a Let's Encrypt cert on first HTTPS request. DNS must already be pointed at the server. Open `https://DOMAIN/` — create your admin, connect Pinterest, go.
+
+Data is persisted in the `buyserv-data` Docker volume. Back it up (it holds your encrypted tokens).
 
 ---
 
-## Using it day-to-day
+## Security model
 
-**Fastest workflow (after affiliate approvals):**
-1. Pick an account + board.
-2. Drop a batch of product URLs into the bulk-URL box → "Fetch all as drafts".
-3. Edit each draft, swap the URL for your affiliate link (Amazon SiteStripe, ShareASale deep link, etc.).
-4. Click **Queue all drafts**. The scheduler posts them one by one, respecting your rate limit.
+| Concern | What we do |
+|---|---|
+| Someone visits my instance URL | Admin password gate + user accounts w/ roles. 5 bad logins = 15-min IP lockout. |
+| DB leak | Pinterest tokens, refresh tokens, Amazon keys are AES-256-GCM encrypted w/ scrypt-derived key from `SESSION_SECRET`. |
+| CSRF | `x-csrf-token` header required on every state-changing request, bound to session cookie via HMAC. |
+| Cookie theft | `httpOnly`, `SameSite=Lax`, `Secure` in production. |
+| Brute-force | scrypt hashes (N=16384). |
+| Behind reverse proxy | `trust proxy` enabled in production so login lockouts work on real client IP. |
 
-**Compliance-safe defaults:**
-- Daily pin limit: 25 (Pinterest's recommended upper bound for automated posting).
-- Throttle: 120s between pins.
-- Auto-disclose: on (appends `#affiliate #ad`).
-- Raise/lower per account as you build trust.
-
-**Follow Pinterest's affiliate rules:**
-- Link directly to the destination — no URL shorteners/cloakers.
-- Don't re-post the same pin URL over and over.
-- Use genuine descriptions, not keyword stuffing.
+**Operational checklist:**
+- Long random `SESSION_SECRET`; back it up — losing it makes encrypted tokens unrecoverable.
+- Run behind HTTPS (Docker Compose setup does this automatically).
+- Regularly rotate Pinterest app credentials if compromised.
+- Give your VA an **editor** account, not admin.
 
 ---
+
+## Things deliberately NOT built
+
+### ❌ Bank account connection
+Affiliate networks pay you directly; this app has no legitimate reason to touch your bank. Storing bank credentials = massive liability for zero upside.
+
+### ❌ Auto-creating affiliate accounts
+Every affiliate program (Amazon Associates, ShareASale, Impact, CJ, Rakuten) requires human applications + reviews. Automation violates their ToS and gets accounts banned with commissions clawed back.
+
+### ❌ Midjourney integration
+MJ has no official API. Unofficial Discord scrapers violate MJ ToS. I used OpenAI `gpt-image-1` instead, behind a pluggable provider interface in `src/aiImage.js` — when MJ ships an official API it's one file to add.
+
+---
+
+## Amazon Associates: important note
+
+Amazon grants **PA-API keys only after you've made 3 qualifying sales within 180 days** of joining. New Associates often don't have API access yet.
+
+If you don't have keys yet:
+- Use Pinterest SiteStripe + this app's URL scraper: paste any Amazon product URL, it auto-fills the draft, then swap the link for your SiteStripe affiliate URL.
+
+Once you have PA-API keys:
+- Admins → Amazon card → Settings → paste Access Key, Secret Key, Associate Tag, marketplace → Save.
+- Use the search box to bulk-find products; checked products import as drafts with your `?tag=` already appended.
+
+---
+
+## Development
+
+```bash
+cd app
+npm install
+npm run dev    # auto-restart on file changes
+npm test       # run the test suite
+```
+
+Tests cover: compliance helpers, encryption roundtrip, Open Graph scraper, password hashing. CI runs them on every push/PR (`.github/workflows/ci.yml`).
 
 ## Project layout
 
@@ -143,26 +174,23 @@ Repeat step 2 for additional accounts.
 app/
   src/
     server.js       Express routes
-    pinterest.js    Pinterest API v5 client
-    auth.js         Admin auth + sessions + CSRF + account token store
-    crypto.js       AES-256-GCM encryption at rest
+    pinterest.js    Pinterest v5 client (pins, media, analytics)
+    amazon.js       Amazon PA-API v5 client (SigV4 signed)
+    auth.js         Users + sessions + CSRF + Pinterest token store
+    crypto.js       AES-256-GCM at-rest encryption
     db.js           SQLite schema + migrations
-    scheduler.js    Background worker (rate-limited posting)
-    scraper.js      OG/Twitter meta extractor
-    aiImage.js      OpenAI gpt-image-1 provider
+    scheduler.js    Background worker (rate-limited posting + analytics)
+    scraper.js      Open Graph / Twitter meta extractor
+    aiImage.js      Pluggable AI image provider (OpenAI)
     compliance.js   FTC disclosure + validation
   public/
-    index.html / login.js      Setup + login
-    dashboard.html / dashboard.js   Main UI
+    index.html + login.js       Setup & login
+    dashboard.html + dashboard.js   Main UI
+    users.html + users.js       Admin-only user management
     styles.css
     sample.csv
-  data/buyserv.db   SQLite (gitignored)
+  test/             node:test suite
+  Dockerfile, docker-compose.yml, Caddyfile   production hosting
+  data/buyserv.db   SQLite (gitignored; persisted to Docker volume in prod)
   .env.example
 ```
-
-## Roadmap / open questions
-
-- **Video pins**: Pinterest v5 supports them via a 2-step upload flow; add if needed.
-- **Per-affiliate-network product feed pulls** (Amazon PA-API, ShareASale feed API, etc.) once you have accounts approved.
-- **Team access**: currently single-admin. Add per-user roles if you bring on a VA.
-- **Analytics pull-back**: fetch Pinterest impressions/saves per pin.
