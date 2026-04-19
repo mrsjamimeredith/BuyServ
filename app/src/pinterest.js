@@ -34,10 +34,7 @@ async function exchangeCode(code) {
   });
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: {
-      Authorization: basicAuthHeader(),
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
+    headers: { Authorization: basicAuthHeader(), 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   });
   if (!res.ok) throw new Error(`Token exchange failed: ${res.status} ${await res.text()}`);
@@ -52,10 +49,7 @@ async function refreshToken(refresh) {
   });
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: {
-      Authorization: basicAuthHeader(),
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
+    headers: { Authorization: basicAuthHeader(), 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   });
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
@@ -107,21 +101,18 @@ async function createBoard(accessToken, name, description = '') {
   });
 }
 
-async function createPin(accessToken, { title, description, boardId, imageUrl, link }) {
+async function createPin(accessToken, { title, description, boardId, imageUrl, imageData, imageMime, link }) {
+  const mediaSource = imageData
+    ? { source_type: 'image_base64', content_type: imageMime || 'image/jpeg', data: imageData }
+    : { source_type: 'image_url', url: imageUrl };
   const body = {
     board_id: boardId,
     title: (title || '').slice(0, 100),
     description: (description || '').slice(0, 500),
     link,
-    media_source: {
-      source_type: 'image_url',
-      url: imageUrl
-    }
+    media_source: mediaSource
   };
-  return apiFetch(accessToken, '/pins', {
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
+  return apiFetch(accessToken, '/pins', { method: 'POST', body: JSON.stringify(body) });
 }
 
 module.exports = {
