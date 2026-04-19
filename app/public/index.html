@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BuyServ — Pinterest Affiliate Poster</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="landing">
+  <main class="center">
+    <div class="logo">BuyServ</div>
+    <h1>Post affiliate products to Pinterest — on autopilot.</h1>
+    <p class="sub">Multi-account. Scheduling. AI images. Paste a product URL, get a pin.</p>
+
+    <div id="setup-env" class="setup-card" hidden>
+      <h3>One-time setup needed</h3>
+      <ol>
+        <li>Create a Pinterest app at <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener">developers.pinterest.com/apps</a>.</li>
+        <li>Set the redirect URI to match <code id="redirect-hint">REDIRECT_URI</code> in your <code>.env</code>.</li>
+        <li>Copy <code>.env.example</code> to <code>.env</code>, fill in credentials, restart.</li>
+      </ol>
+      <p id="missing-vars" class="muted small"></p>
+    </div>
+
+    <div id="setup-admin" class="card auth-card" hidden>
+      <h3>Create admin account</h3>
+      <p class="muted small">This is your first user — it gets the <b>admin</b> role. Add more users later (editor / viewer).</p>
+      <form id="setup-form" class="form">
+        <input class="input" name="username" type="text" placeholder="Admin username" required autofocus />
+        <input class="input" name="password" type="password" minlength="10" placeholder="Password (10+ chars)" required />
+        <input class="input" name="confirm" type="password" minlength="10" placeholder="Confirm password" required />
+        <button class="btn primary" type="submit">Create & sign in</button>
+      </form>
+    </div>
+
+    <div id="login" class="card auth-card" hidden>
+      <h3>Sign in</h3>
+      <form id="login-form" class="form">
+        <input class="input" name="username" type="text" placeholder="Username" required autofocus />
+        <input class="input" name="password" type="password" placeholder="Password" required />
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+      <p id="login-err" class="muted small" style="color:#a0181c"></p>
+    </div>
+
+    <ul class="features">
+      <li><b>Manage multiple Pinterest business accounts</b> in one place.</li>
+      <li><b>Schedule posts</b> with per-account rate limits (stays within Pinterest guidelines).</li>
+      <li><b>Paste any product URL</b> — we extract title, image, and description automatically.</li>
+      <li><b>AI-generate images</b> from a prompt and pin them directly.</li>
+      <li><b>Bulk CSV import</b> for hundreds of products.</li>
+    </ul>
+  </main>
+
+  <script src="/login.js"></script>
+</body>
+</html>

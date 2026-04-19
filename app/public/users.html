@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Users — BuyServ</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">BuyServ</div>
+    <div class="top-actions">
+      <a href="/dashboard.html" class="btn small ghost">← Dashboard</a>
+      <span id="me" class="muted small"></span>
+      <button id="logout" class="btn small ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main class="dash">
+    <section class="card">
+      <h2>Team</h2>
+      <p class="muted small">
+        <b>admin</b> = everything · <b>editor</b> = post/schedule/edit products · <b>viewer</b> = read-only
+      </p>
+      <div id="users"></div>
+    </section>
+
+    <section class="card">
+      <h2>Add user</h2>
+      <form id="new-user-form" class="form">
+        <div class="row">
+          <input class="input" name="username" placeholder="Username" required />
+          <input class="input" name="password" type="password" placeholder="Password (10+ chars)" minlength="10" required />
+          <select class="input" name="role">
+            <option value="editor">editor</option>
+            <option value="viewer">viewer</option>
+            <option value="admin">admin</option>
+          </select>
+          <button class="btn primary" type="submit">Create</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Change my password</h2>
+      <form id="pw-form" class="form">
+        <div class="row">
+          <input class="input" name="current" type="password" placeholder="Current password" required />
+          <input class="input" name="next" type="password" placeholder="New password (10+ chars)" minlength="10" required />
+          <button class="btn" type="submit">Update</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/users.js"></script>
+</body>
+</html>

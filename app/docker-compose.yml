@@ -1,0 +1,50 @@
+# BuyServ + Caddy (automatic HTTPS via Let's Encrypt).
+#
+# Quick start:
+#   1. `cp .env.example .env` and fill values. Set DOMAIN=your.domain.com.
+#   2. Point DNS A record for DOMAIN at this server's public IP.
+#   3. Update REDIRECT_URI in .env to https://DOMAIN/auth/callback and
+#      update the same redirect URI in your Pinterest app dashboard.
+#   4. `docker compose up -d --build`
+# Caddy will fetch a Let's Encrypt cert automatically on first request.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - buyserv-data:/app/data
+    expose:
+      - "3000"
+    networks:
+      - buyserv
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - buyserv
+    depends_on:
+      - app
+
+volumes:
+  buyserv-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  buyserv:

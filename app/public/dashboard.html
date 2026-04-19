@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard — BuyServ</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">BuyServ</div>
+    <div class="top-actions">
+      <select id="account-switcher" class="input small" title="Current Pinterest account"></select>
+      <a id="connect-link" href="/auth/connect" class="btn small">+ Connect account</a>
+      <a id="users-link" href="/users.html" class="btn small ghost" hidden>Team</a>
+      <span id="me-badge" class="muted small"></span>
+      <button id="logout" class="btn small ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main class="dash">
+
+    <section class="card" id="no-account-card" hidden>
+      <h2>No Pinterest account connected yet</h2>
+      <p class="muted">Click "Connect account" above to authorize your business Pinterest. You can connect as many as you want.</p>
+    </section>
+
+    <section class="card">
+      <h2>Settings for this account</h2>
+      <div class="grid3">
+        <label>
+          <span>Max pins/day</span>
+          <input id="cfg-daily" class="input" type="number" min="1" max="200" />
+          <small class="muted">Pinterest recommends ≤25/day to avoid spam flags.</small>
+        </label>
+        <label>
+          <span>Min seconds between pins</span>
+          <input id="cfg-throttle" class="input" type="number" min="30" max="86400" />
+          <small class="muted">Slower cadence = safer.</small>
+        </label>
+        <label class="checkbox">
+          <input id="cfg-disclose" type="checkbox" />
+          <span>Auto-add <code>#affiliate #ad</code> (FTC/Pinterest compliance)</span>
+        </label>
+      </div>
+      <div class="row mt">
+        <button id="cfg-save" class="btn primary" type="button">Save settings</button>
+        <span id="cfg-status" class="muted small"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>1. Pick a board</h2>
+      <div class="row">
+        <select id="board" class="input"></select>
+        <button id="refresh-boards" class="btn ghost" type="button">Refresh</button>
+      </div>
+      <details class="mt">
+        <summary>Create a new board</summary>
+        <div class="row mt">
+          <input id="new-board-name" class="input" placeholder="Board name" />
+          <input id="new-board-desc" class="input" placeholder="Description (optional)" />
+          <button id="create-board" class="btn" type="button">Create</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>2. Import a product</h2>
+      <p class="muted small">Paste a product URL — we'll fetch title, image, and description automatically.</p>
+      <div class="row">
+        <input id="scrape-url" class="input" type="url" placeholder="https://store.example.com/product/..." />
+        <button id="scrape-btn" class="btn" type="button">Fetch details</button>
+      </div>
+      <details class="mt">
+        <summary>Or bulk-import URLs (one per line, up to 50)</summary>
+        <textarea id="bulk-urls" class="input mt" rows="5" placeholder="https://...\nhttps://..."></textarea>
+        <div class="row mt"><button id="bulk-scrape-btn" class="btn" type="button">Fetch all as drafts</button></div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>3. Create / edit a product</h2>
+      <form id="product-form" class="form">
+        <label>
+          Title
+          <input name="title" class="input" required maxlength="100" />
+        </label>
+        <label>
+          Affiliate link (must go directly to destination — no cloakers)
+          <input name="affiliate_url" class="input" required type="url" />
+        </label>
+        <label>
+          Description
+          <textarea name="description" class="input" rows="3" maxlength="500"></textarea>
+        </label>
+        <div class="image-row">
+          <div class="image-field">
+            <label>
+              Image URL
+              <input name="image_url" class="input" type="url" placeholder="https://..." />
+            </label>
+          </div>
+          <div class="image-field">
+            <label>
+              Or upload an image
+              <input id="image-file" type="file" accept="image/*" class="input" />
+            </label>
+          </div>
+          <div class="image-field">
+            <label>
+              Or generate with AI
+              <input id="ai-prompt" class="input" placeholder="Prompt for image generator" />
+            </label>
+            <button id="ai-generate" class="btn small" type="button">Generate</button>
+            <small id="ai-note" class="muted small"></small>
+          </div>
+        </div>
+        <div id="image-preview-wrap" hidden>
+          <img id="image-preview" alt="" />
+          <button id="clear-image" class="btn small ghost" type="button">Remove</button>
+        </div>
+        <label>
+          Schedule (optional)
+          <input name="scheduled_for" id="sched-input" class="input" type="datetime-local" />
+          <small class="muted">Leave blank to save as a draft. Past times run immediately.</small>
+        </label>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Save draft</button>
+          <button id="save-and-queue" class="btn" type="button">Save & queue now</button>
+          <button id="save-and-schedule" class="btn" type="button">Save & schedule</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" id="amazon-card" hidden>
+      <h2>Amazon product search</h2>
+      <p id="amazon-status" class="muted small"></p>
+      <div class="row">
+        <input id="amazon-q" class="input" placeholder="Keywords (e.g. aesthetic coffee mug)" />
+        <select id="amazon-index" class="input" style="flex:0 0 160px">
+          <option>All</option><option>HomeAndKitchen</option><option>Beauty</option>
+          <option>Fashion</option><option>Electronics</option><option>Toys</option>
+          <option>Books</option><option>PetSupplies</option><option>Grocery</option>
+        </select>
+        <button id="amazon-search" class="btn primary" type="button">Search</button>
+        <button id="amazon-settings-btn" class="btn small ghost" type="button" data-admin>Settings</button>
+      </div>
+      <div id="amazon-settings" class="mt" hidden>
+        <div class="grid3">
+          <label>Access key<input id="amz-access" class="input" /></label>
+          <label>Secret key<input id="amz-secret" class="input" type="password" /></label>
+          <label>Associate tag<input id="amz-tag" class="input" /></label>
+          <label>Marketplace<select id="amz-mp" class="input"></select></label>
+        </div>
+        <div class="row mt">
+          <button id="amz-save" class="btn primary" type="button">Save credentials</button>
+          <button id="amz-test" class="btn" type="button">Test</button>
+          <button id="amz-clear" class="btn ghost" type="button">Disconnect</button>
+        </div>
+      </div>
+      <div id="amazon-results" class="amazon-grid mt"></div>
+      <div class="row mt">
+        <button id="amazon-import" class="btn primary" type="button" hidden>Import selected as drafts</button>
+        <span id="amazon-selected-count" class="muted small"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Video pin (optional)</h2>
+      <p class="muted small">
+        Pinterest accepts MP4/MOV up to 2GB; we cap uploads at 50MB here.
+        Video pins <b>require a cover image</b> — upload one, or set an Image URL above that we'll use as the cover.
+      </p>
+      <div class="row">
+        <label style="flex:1">Video file
+          <input id="video-file" type="file" accept="video/*" class="input" />
+        </label>
+        <label style="flex:1">Cover image (optional if Image URL is set above)
+          <input id="cover-image-file" type="file" accept="image/*" class="input" />
+        </label>
+      </div>
+      <div id="video-status" class="muted small mt"></div>
+    </section>
+
+    <section class="card">
+      <h2>Bulk CSV import</h2>
+      <p class="muted small">
+        Columns: <code>title</code>, <code>image_url</code>, <code>affiliate_url</code>,
+        <code>description</code> (optional), <code>board</code> or <code>board_id</code> (optional).
+        <a href="/sample.csv" download>Download sample</a>
+      </p>
+      <form id="csv-form" class="row">
+        <input id="csv-file" class="input" type="file" accept=".csv" required />
+        <button class="btn" type="submit">Import</button>
+      </form>
+    </section>
+
+    <section class="card" id="analytics-card">
+      <div class="row-between">
+        <h2>Analytics (last 30 days)</h2>
+        <div class="row">
+          <span id="analytics-updated" class="muted small"></span>
+          <button id="refresh-analytics" class="btn small" type="button">Refresh all</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="stat-impressions">—</b><span>Impressions</span></div>
+        <div class="stat"><b id="stat-saves">—</b><span>Saves</span></div>
+        <div class="stat"><b id="stat-pin-clicks">—</b><span>Pin clicks</span></div>
+        <div class="stat"><b id="stat-outbound">—</b><span>Outbound clicks</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row-between">
+        <h2>Products</h2>
+        <div class="row">
+          <span id="posted-today" class="muted small"></span>
+          <button id="queue-all" class="btn primary" type="button">Queue all drafts</button>
+        </div>
+      </div>
+      <div id="products"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/dashboard.js"></script>
+</body>
+</html>
